@@ -7,6 +7,7 @@ import os
 import argparse
 import sys
 import time 
+from glob import glob
 
 def is_path(path_f):
     if not isinstance(path_f, str):
@@ -22,7 +23,6 @@ parser.add_argument("-p", "--permanent", help="Permanently delete the files", ac
 parser.add_argument("-d", "--directory", help="Print the trash directory", action="store_true")
 parser.add_argument("-l", "--list", help="List the files in the trash", action="store_true")
 parser.add_argument("-c", "--clear", help="Clear the trash", action="store_true")
-parser.add_argument("-g", "--glob", help="Use glob to match the files", action="store_true")
 parser.add_argument("-f", "--fetch", help="Fetch the files from the trash", action="store_true")
 parser.add_argument("paths", nargs='*', help="One or more file or directory paths to operate on")
 args= parser.parse_args()
@@ -34,7 +34,7 @@ rma_trash_dir = rma_trash_dir if is_path(rma_trash_dir) else default_trash_path
 
 def move_file(src:str, permenant:bool=False):
     if permenant:
-        check_f = input("Are you sure you want to delete the file permanently? (y/n): ")
+        check_f = input(f"Are you sure you want to delete {src}? (y/n): ")
         if check_f.lower() == 'y':
             if os.path.isfile(src):
                 os.remove(src)
@@ -95,12 +95,11 @@ def clear_trash():
         shutil.rmtree(rma_trash_dir)
         os.makedirs(rma_trash_dir, exist_ok=True)
         print("Trash cleared successfully!")
-def fetch_files(target_i):
-    files = os.listdir(rma_trash_dir)
-    if target_i in files:
+def fetch_files(target_f, paths_f):
+    if target_f in paths_f:
         src = os.path.join(rma_trash_dir, target_i)
         dst = os.path.join(os.getcwd(), target_i)
-    elif isinstance(target_i, int) and target_i < len(files):
+    elif isinstance(target_i, int) and target_i < len(paths_f):
         src = os.path.join(rma_trash_dir, files[target_i])
         dst = os.path.join(os.getcwd(), files[target_i])
     else:
@@ -109,10 +108,18 @@ def fetch_files(target_i):
     if os.path.exists(dst):
         check_f = input(f"File {dst} already exists, do you want to overwrite it? (y/n): ")
         if check_f.lower() == 'y':
-            shutil.move(src, dst)
-            print(f"File {os.path.basename(dst)} was merged!")
+            try:
+                os.remove(dst)
+                shutil.move(src, dst)
+                print(f"File {os.path.basename(dst)} was merged!")
+            except Exception as e:
+                print(f"{dst} Merge Encountered Error: {e}")
     else:
-        shutil.move(src, dst)
+        try:
+            shutil.move(src, dst)
+            print(f"File {os.path.basename(dst)} was fetched!")
+        except Exception as e:
+            print(f"{dst} Fetch Encountered Error: {e}")
 
 
 if __name__ == "__main__":
@@ -126,35 +133,39 @@ if __name__ == "__main__":
         clear_trash()
         sys.exit(0)
     elif args.fetch:
+        files = os.listdir(rma_trash_dir)
         paths = args.paths
-        for path_i in paths:
+        for target_i in paths:
             try:
-                fetch_files(path_i)
+                fetch_files(target_i, files)
             except Exception as e:
-                print(f"{path_i} Fetch Encountered Error: {e}")
+                print(f"{target_i} Fetch Encountered Error: {e}")
         sys.exit(0)
-    elif args.glob:
-        from glob import glob
-        paths = args.paths
-        for path_i in paths:
-            path_i = os.path.expanduser(path_i)
-            path_i = os.path.abspath(path_i)
-            path_l = glob(path_i) if "**" not in path_i else glob(path_i, recursive=True)
-            if len(path_l) == 0:
-                continue
-            for path_j in path_l:
+    paths = [os.path.abspath(os.path.expanduser(path_i)) for path_i in args.paths]
+    path_n = []
+    for path_i in paths:
+        path_l = glob(path_i) if "**" not in path_i else glob(path_i, recursive=True)
+        if len(path_l) == 0:
+            continue
+        path_n += path_l
+
+    if len(path_n) == 0:
+        print("No valid path found!")
+        sys.exit(0)
+    
+    if args.permanent:
+        check_f = input(f"Are you sure you want to delete {len(paths)} files? (y/n): ")
+        if check_f.lower() == 'y':
+            for path_i in path_n:
                 try:
-                    move_file(path_j, args.permanent)
+                    move_file(path_i, args.permanent)
                 except Exception as e:
-                    print(f"{path_j} Move Encountered Error: {e}")
+                    print(f"{path_i} Move Encountered Error: {e}")
         sys.exit(0)
-     
-    for path_i in args.paths:
-        path_i = os.path.expanduser(path_i)
-        path_i = os.path.abspath(path_i)
-        try:
-            if os.path.exists(path_i):
+    else:
+        for path_i in path_n:
+            try:
                 move_file(path_i, args.permanent)
-        except Exception as e:
-            print(f"{path_i} Move Encountered Error: {e}")
-    sys.exit(0)
+            except Exception as e:
+                print(f"{path_i} Move Encountered Error: {e}")
+        sys.exit(0)
